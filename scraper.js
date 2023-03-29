@@ -1,87 +1,28 @@
-const request = require('request-promise');
-const cheerio = require('cheerio');
-const fs = require('fs');
-const sqlite3 = require('sqlite3').verbose();
-const moment = require('moment');
-const axios  = require('axios')
+const puppeteer = require('puppeteer');
 
-// Define the URL to scrape
-const url = 'https://www.theverge.com/';
+async function scrapeHeadline() {
+  const browser = await puppeteer.launch();
+  const page = await browser.newPage();
+  await page.goto('https://www.theverge.com', { timeout: 60000 });
 
-// Define the filename for the output CSV file
-const csvFilename = moment().format('DDMMYYYY') + '_verge.csv';
 
-// Define the database filename
-const dbFilename = 'verge.db';
+  const headlineElement = await page.$x('//*[@id="__next"]/div/div/main/div[4]/div/div[1]/div[2]/div[1]/div/ol/li[1]/a/h3');
+  const headlineText = await page.evaluate(el => el.textContent, headlineElement[0]);
+  const headlineUrlElement = await page.$x('//*[@id="__next"]/div/div/main/div[4]/div/div[1]/div[2]/div[1]/div/ol/li[1]/a');
+  const headlineUrl = await page.evaluate(el => el.getAttribute('href'), headlineUrlElement[0]);
 
-// Define the SQLite database connection
-const db = new sqlite3.Database(dbFilename, (err) => {
-  if (err) {
-    console.error(err.message);
-  }
-  console.log('Connected to the database.');
-});
+  const authorElement = await page.$x('//*[@id="__next"]/div/div/main/div[4]/div/div[1]/div[2]/div[1]/div/ol/li[1]/p/span[1]');
+  const authorName = await page.evaluate(el => el.textContent, authorElement[0]);
 
-// Define the SQL statement to create the articles table
-const createTableSql = `CREATE TABLE IF NOT EXISTS articles (
-  id INTEGER PRIMARY KEY,
-  url TEXT,
-  headline TEXT,
-  author TEXT,
-  date TEXT
-);`;
+  const dateElement = await page.$x('//*[@id="__next"]/div/div/main/div[4]/div/div[1]/div[2]/div[1]/div/ol/li[1]/p/span[2]');
+  const publishedDate = await page.evaluate(el => el.textContent, dateElement[0]);
 
-// Create the articles table in the database
-db.run(createTableSql);
+  console.log(headlineText);
+  console.log(headlineUrl);
+  console.log(authorName);
+  console.log(publishedDate);
 
-// Define the function to scrape the articles
-const scrapeArticles = async () => {
-  try {
-    // Load the web page
-    const response = await axios.get('https://www.theverge.com/');
-    
-    const $ = cheerio.load(response.data);
+  await browser.close();
+}
 
-    // Find all article elements
-    const articles = $('div.c-entry-box--compact');
-    console.log(articles);
-
-    // Extract the article data and store it in an array
-    const articleData = [];
-    articles.each((i, el) => {
-      const article = $(el);
-
-      // Extract the article data
-      const headline = article.find('h2.c-entry-box--compact__title').text().trim();
-      const url = article.find('a').attr('href');
-      const author = article.find('span.c-byline__item').first().text().trim();
-      const date = article.find('time').attr('datetime');
-      // Create an object to store the article data
-      const data = {
-        headline,
-        url,
-        author,
-        date
-      };
-
-      // Add the article data to the array
-      articleData.push(data); 
-      console.log(data.headline, data.url, data.author, data.date);
-
-    });
-
-    // Save the article data to a CSV file
-    const csvData = articleData.map((article, i) => `${i},${article.url},${article.headline},${article.author},${article.date}`).join('\n');
-    fs.writeFileSync(csvFilename, csvData);
-
-    // Save the article data to the SQLite database
-    const insertSql = `INSERT INTO articles (url, headline, author, date) VALUES (?, ?, ?, ?);`;
-    for (const article of articleData) {
-      db.run(insertSql, [article.url, article.headline, article.author, article.date]);
-    }
-  } catch (err) {
-    console.error(err);
-  }
-};
-// Scrape the articles and save the data
-scrapeArticles();
+scrapeHeadline();
